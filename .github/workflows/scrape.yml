@@ -1,0 +1,33 @@
+name: Scrape flight offers
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC = 08:30 IST daily
+  workflow_dispatch:        # also triggerable manually from the Actions tab
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # needed to push offers.json back to the repo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright beautifulsoup4
+          playwright install chromium --with-deps
+
+      - name: Run scraper
+        run: python scraper/scrape.py
+
+      - name: Commit updated offers.json
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'data: update flight offers [skip ci]'
+          file_pattern: offers.json
