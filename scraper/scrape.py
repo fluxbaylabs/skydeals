@@ -2,18 +2,13 @@
 """
 Flight offer scraper for Indian booking platforms.
 
-Strategy: navigate to each platform's offers page with a real Chromium
-browser (via Playwright), wait for JS to settle, then extract all visible
-text.  Offer data is parsed from that text using bank-name + discount-amount
-patterns — more resilient than CSS selectors that break whenever a site
-redesigns.
-
-Run locally:
-    pip install playwright beautifulsoup4
-    playwright install chromium
-    python scraper/scrape.py
+Usage:
+    python scraper/scrape.py                          # normal run
+    python scraper/scrape.py --debug                  # saves raw page text to scraper/debug/
+    python scraper/scrape.py --debug --platform Cleartrip
 """
 
+import argparse
 import asyncio
 import json
 import re
@@ -23,74 +18,66 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Configuration
-# ──────────────────────────────────────────────────────────────────────────────
+# ── Config ─────────────────────────────────────────────────────────────────
 
 BANKS = [
     "HDFC", "SBI", "State Bank", "Axis", "ICICI", "Kotak",
     "Amex", "American Express", "IndusInd", "RBL",
     "IDFC First", "IDFC", "AU Bank", "AU Small Finance",
     "Yes Bank", "Federal Bank", "Bank of Baroda", "BOB",
-    "Standard Chartered", "StanChart", "Canara Bank",
+    "Standard Chartered", "StanChart", "Canara",
 ]
 
-# Words that look like promo codes but aren't
 _NOT_CODES = {
-    "HDFC", "ICICI", "AXIS", "KOTAK", "AMEX", "INDUSIND", "IDFC",
-    "EMI", "UPI", "RBL", "SBI", "BANK", "CARD", "FLAT", "FREE",
-    "BOOK", "SAVE", "DEAL", "EASY", "BEST", "HOME", "FLIGHT",
-    "HOTEL", "BUS", "TRAIN", "OFFER", "CODE", "PROMO",
+    "HDFC","ICICI","AXIS","KOTAK","AMEX","INDUSIND","IDFC","EMI","UPI",
+    "RBL","SBI","BANK","CARD","FLAT","FREE","BOOK","SAVE","DEAL","EASY",
+    "BEST","HOME","FLIGHT","HOTEL","BUS","TRAIN","OFFER","CODE","PROMO",
+    "VISA","MASTER","RUPAY","CREDIT","DEBIT","APPLY","LOGIN","SIGN",
+    "VIEW","MORE","KNOW","TERMS","CLICK","HERE","NEXT","BACK",
 }
 
 PLATFORMS = [
     {
         "id": "MakeMyTrip",
         "urls": [
+            "https://www.makemytrip.com/offers/",
             "https://www.makemytrip.com/offers/flights-offers.html",
-            "https://www.makemytrip.com/offers/bank-offers-on-flight.html",
         ],
     },
     {
         "id": "GoIbibo",
         "urls": [
             "https://www.goibibo.com/offers/",
-            "https://www.goibibo.com/offers/flight-offers/",
         ],
     },
     {
         "id": "Yatra",
         "urls": [
-            "https://www.yatra.com/offers/flight-offers.html",
-            "https://www.yatra.com/online-flights/deals.html",
+            "https://www.yatra.com/offers/",
+            "https://www.yatra.com/flights/domestic-flights.html",
         ],
     },
     {
         "id": "Cleartrip",
         "urls": [
             "https://www.cleartrip.com/offers/",
-            "https://www.cleartrip.com/offers/flights",
         ],
     },
     {
         "id": "EaseMyTrip",
         "urls": [
             "https://www.easemytrip.com/offers/flight-offers",
-            "https://www.easemytrip.com/offers.html",
         ],
     },
     {
         "id": "Ixigo",
         "urls": [
             "https://www.ixigo.com/offers/",
-            "https://www.ixigo.com/offers/flights",
         ],
     },
 ]
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Text-based offer extraction helpers
-# ──────────────────────────────────────────────────────────────────────────────
+# ── Extraction helpers ──────────────────────────────────────────────────────
 
 def _bank_in(text: str) -> str | None:
     for bank in BANKS:
@@ -99,18 +86,27 @@ def _bank_in(text: str) -> str | None:
     return None
 
 def _discount(text: str) -> str | None:
-    # Prefer rupee amount; fall back to percentage
-    for pat in [
-        r'(?:flat|upto|up\s+to|save|get)?\s*₹\s*([\d,]+)',
-        r'(?:flat|upto|up\s+to|save|get)?\s*(\d{1,3})\s*%\s*(?:off|instant|cashback|discount)',
-    ]:
+    """Match rupee amounts and percentages in all common Indian formats."""
+    patterns = [
+        # ₹ symbol variants
+        (r'(?:flat|upto|up\s+to|save|get|off|instant)?\s*[₹]\s*([\d,]+)', '₹{}'),
+        # Rs. / Rs / INR variants
+        (r'(?:flat|upto|up\s+to|save|get|off|instant)?\s*(?:Rs\.?|INR)\s*([\d,]+)', '₹{}'),
+        # percentage
+        (r'(\d{1,3})\s*%\s*(?:off|instant\s+discount|cashback|discount|savings)', '{}% off'),
+        # "discount of X" without symbol — less reliable, check last
+        (r'(?:discount|savings?|cashback)\s+of\s+(?:Rs\.?|₹|INR)?\s*([\d,]+)', '₹{}'),
+    ]
+    for pat, fmt in patterns:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
-            return f"₹{m.group(1)}" if '₹' in pat else f"{m.group(1)}% off"
+            val = m.group(1).replace(',', '')
+            if val.isdigit() and int(val) < 10:
+                continue  # skip tiny numbers like "5% off navigation arrows"
+            return fmt.format(m.group(1))
     return None
 
 def _promo_code(text: str) -> str | None:
-    # Explicitly labelled code
     m = re.search(
         r'(?:use\s+code|coupon|promo\s+code|apply\s+code)[:\s]+([A-Z][A-Z0-9]{3,11})\b',
         text, re.IGNORECASE,
@@ -119,21 +115,19 @@ def _promo_code(text: str) -> str | None:
         code = m.group(1).upper()
         if code not in _NOT_CODES:
             return code
-    # Standalone alphanumeric tokens that have both letters and digits
     for tok in re.findall(r'\b([A-Z][A-Z0-9]{4,11})\b', text):
         if tok not in _NOT_CODES and not tok.isalpha() and not tok.isdigit():
             return tok
     return None
 
 def _validity(text: str) -> str | None:
-    patterns = [
+    for pat in [
         r'valid\s+(?:till|until|through)[:\s]+([^\n.]{3,30})',
         r'expires?\s*(?:on)?[:\s]+([^\n.]{3,30})',
         r'offer\s+ends?\s*[:\s]+([^\n.]{3,30})',
         r'(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*\d{2,4})',
         r'(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})',
-    ]
-    for pat in patterns:
+    ]:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
             return m.group(1).strip()[:30]
@@ -141,13 +135,12 @@ def _validity(text: str) -> str | None:
 
 def _min_booking(text: str) -> str | None:
     m = re.search(
-        r'(?:min(?:imum)?\s+(?:booking|txn|transaction|purchase|order|spend)[:\s]+₹?\s*([\d,]+)'
-        r'|on\s+(?:a\s+)?(?:minimum\s+)?(?:booking|transaction)\s+of\s+₹?\s*([\d,]+))',
+        r'(?:min(?:imum)?\s+(?:booking|txn|transaction|purchase|order|spend)[:\s]+(?:Rs\.?|₹|INR)?\s*([\d,]+)'
+        r'|on\s+(?:a\s+)?(?:minimum\s+)?(?:booking|transaction)\s+of\s+(?:Rs\.?|₹|INR)?\s*([\d,]+))',
         text, re.IGNORECASE,
     )
     if m:
-        amt = m.group(1) or m.group(2)
-        return f"₹{amt}"
+        return f"₹{(m.group(1) or m.group(2))}"
     return None
 
 def _is_emi(text: str) -> bool:
@@ -163,30 +156,20 @@ def _clean(raw: str) -> str:
     return text
 
 def parse_offers(page_text: str) -> list[dict]:
-    """
-    Split page text into chunks; extract one offer per chunk that contains
-    both a bank name and a discount amount.
-    """
     offers, seen = [], set()
-
-    # Split on blank lines or transitions from a digit/period to an uppercase letter
     chunks = re.split(r'\n{2,}|(?<=[\d.])\n(?=[A-Z])', page_text)
-
     for chunk in chunks:
         chunk = chunk.strip()
         if len(chunk) < 15:
             continue
-
         bank     = _bank_in(chunk)
         discount = _discount(chunk)
         if not bank or not discount:
             continue
-
         key = (bank.lower(), discount.lower())
         if key in seen:
             continue
         seen.add(key)
-
         offers.append({
             "bank":         bank,
             "card":         "All cards",
@@ -197,55 +180,70 @@ def parse_offers(page_text: str) -> list[dict]:
             "min_booking":  _min_booking(chunk),
             "offer_type":   "EMI" if _is_emi(chunk) else "Non-EMI",
         })
-
-        if len(offers) >= 25:   # cap per platform to avoid noise
+        if len(offers) >= 25:
             break
-
     return offers
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Playwright helpers
-# ──────────────────────────────────────────────────────────────────────────────
+# ── Playwright helpers ──────────────────────────────────────────────────────
 
-# CSS selectors to try for offer card containers (tried in order)
 _CARD_SELECTORS = [
-    "[class*='offer-card']",
-    "[class*='offerCard']",
-    "[class*='offer_card']",
-    "[class*='bank-offer']",
-    "[class*='bankOffer']",
-    "[class*='deal-card']",
-    "[class*='dealCard']",
-    "[class*='promo-card']",
-    "article",
+    "[class*='offer-card']", "[class*='offerCard']", "[class*='offer_card']",
+    "[class*='bank-offer']", "[class*='bankOffer']", "[class*='deal-card']",
+    "[class*='dealCard']",   "[class*='promo-card']", "article",
 ]
 
-async def _page_text(page, url: str) -> str:
-    try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=28_000)
-        await page.wait_for_timeout(4_500)   # let JS hydrate
+async def scroll_page(page):
+    """Scroll to trigger lazy-loaded content."""
+    for _ in range(5):
+        await page.evaluate("window.scrollBy(0, window.innerHeight)")
+        await page.wait_for_timeout(600)
 
-        # Try offer card containers first — cleaner text
+async def get_page_text(page, url: str) -> tuple[str, str]:
+    """Returns (text, method_description)."""
+    try:
+        print(f"    navigating → {url}")
+        await page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=30_000,
+        )
+        await page.wait_for_timeout(5_000)
+        await scroll_page(page)
+
+        # Dismiss cookie/consent overlays
+        for sel in [
+            "button[id*='accept']", "button[class*='accept']",
+            "button[class*='agree']", "#onetrust-accept-btn-handler",
+            "button:has-text('Accept')", "button:has-text('Got it')",
+        ]:
+            try:
+                btn = await page.query_selector(sel)
+                if btn and await btn.is_visible():
+                    await btn.click()
+                    await page.wait_for_timeout(800)
+                    break
+            except Exception:
+                pass
+
+        # Try offer card containers first
         for sel in _CARD_SELECTORS:
             els = await page.query_selector_all(sel)
             if len(els) >= 3:
                 texts = [await e.inner_text() for e in els]
-                combined = "\n\n".join(t.strip() for t in texts)
-                if any(b in combined for b in BANKS):
-                    print(f"    selector '{sel}' matched {len(els)} elements")
-                    return combined
+                combined = "\n\n".join(t.strip() for t in texts if t.strip())
+                if any(b.lower() in combined.lower() for b in BANKS):
+                    return combined, f"selector:{sel}({len(els)})"
 
-        # Fall back to full body text
-        return await page.inner_text("body")
+        body = await page.inner_text("body")
+        return body, "body-fallback"
 
     except PWTimeout:
-        print(f"    timeout on {url}")
-        return ""
+        return "", "timeout"
     except Exception as exc:
-        print(f"    error on {url}: {exc}")
-        return ""
+        return "", f"error:{exc}"
 
-async def scrape_platform(browser, platform: dict) -> list[dict]:
+
+async def scrape_platform(browser, platform: dict, debug: bool, debug_dir: Path) -> list[dict]:
     page = await browser.new_page()
     await page.set_extra_http_headers({
         "User-Agent": (
@@ -258,27 +256,49 @@ async def scrape_platform(browser, platform: dict) -> list[dict]:
 
     all_text = ""
     for url in platform["urls"]:
-        print(f"  → {url}")
-        text = await _page_text(page, url)
+        text, method = await get_page_text(page, url)
+        bank_hits = sum(1 for b in BANKS if b.lower() in text.lower())
+        print(f"    method={method}  chars={len(text)}  bank_hits={bank_hits}")
         all_text += "\n\n" + text
-        # If we already have bank-mention-rich content, skip remaining URLs
-        if len(text) > 400 and sum(1 for b in BANKS if b in text) >= 2:
+        if len(text) > 400 and bank_hits >= 2:
             break
 
     await page.close()
 
+    if debug:
+        out = debug_dir / f"{platform['id']}.txt"
+        out.write_text(all_text.strip(), encoding="utf-8")
+        print(f"    debug → {out}  ({len(all_text)} chars)")
+
     offers = parse_offers(all_text)
-    print(f"  ✓ {len(offers)} offers extracted")
+    print(f"    {'✓' if offers else '✗'} {len(offers)} offers extracted")
+
+    if debug and not offers and all_text.strip():
+        snippet = all_text.strip()[:600].replace('\n', ' ↵ ')
+        print(f"    [snippet] {snippet}\n")
+
     return offers
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────────────────────────────────────
 
-async def main() -> None:
-    output: dict = {
+# ── Main ────────────────────────────────────────────────────────────────────
+
+async def main(args) -> None:
+    targets = PLATFORMS
+    if args.platform:
+        targets = [p for p in PLATFORMS if p["id"].lower() == args.platform.lower()]
+        if not targets:
+            names = ', '.join(p['id'] for p in PLATFORMS)
+            print(f"Unknown platform '{args.platform}'. Valid: {names}")
+            return
+
+    debug_dir = Path(__file__).parent / "debug"
+    if args.debug:
+        debug_dir.mkdir(exist_ok=True)
+        print(f"Debug ON — raw text → {debug_dir}/\n")
+
+    output = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "platforms": {},
+        "platforms": {p["id"]: [] for p in PLATFORMS},
     }
 
     async with async_playwright() as pw:
@@ -286,24 +306,29 @@ async def main() -> None:
             headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
-
-        for platform in PLATFORMS:
-            print(f"\n▶ {platform['id']}")
+        for platform in targets:
+            print(f"\n▶  {platform['id']}")
             try:
-                output["platforms"][platform["id"]] = await scrape_platform(browser, platform)
+                output["platforms"][platform["id"]] = await scrape_platform(
+                    browser, platform, args.debug, debug_dir
+                )
             except Exception:
-                print(f"  ✗ failed\n{traceback.format_exc()}")
-                output["platforms"][platform["id"]] = []
+                print(f"   ✗ unexpected error\n{traceback.format_exc()}")
 
         await browser.close()
 
-    # Write alongside index.html (repo root)
-    out = Path(__file__).parent.parent / "offers.json"
-    out.write_text(json.dumps(output, indent=2, ensure_ascii=False))
-
+    out_path = Path(__file__).parent.parent / "offers.json"
+    out_path.write_text(json.dumps(output, indent=2, ensure_ascii=False))
     total = sum(len(v) for v in output["platforms"].values())
-    print(f"\n✅  Done — {total} offers written to {out}")
+    print(f"\n✅  {total} total offers → {out_path}")
+
+    if args.debug and total == 0:
+        print(f"\n⚠  Nothing extracted. Open the .txt files in {debug_dir}/ and look for")
+        print("   where bank names + amounts appear, then paste a sample here.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    p = argparse.ArgumentParser()
+    p.add_argument("--debug",    action="store_true")
+    p.add_argument("--platform", type=str, default=None)
+    asyncio.run(main(p.parse_args()))
