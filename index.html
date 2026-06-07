@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyDeals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #F7F8FA;
+      --surface:  #FFFFFF;
+      --border:   #E4E7EC;
+      --text:     #111827;
+      --muted:    #6B7280;
+      --accent:   #2563EB;
+      --success:  #059669;
+      --danger:   #DC2626;
+      --radius:   10px;
+      --mono:     'JetBrains Mono', monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0D1117; --surface: #161B22; --border: #30363D;
+        --text: #E6EDF3; --muted: #8B949E; --accent: #58A6FF;
+        --success: #3FB950;
+      }
+      .badge-emi     { background:#1C3A6B; color:#79C0FF; }
+      .badge-instant { background:#0D3B2E; color:#56D364; }
+      .offer-count   { background:#21262D; }
+      .copy-btn      { background:#21262D; border-color:#30363D; }
+      .raw-pre       { background:#0D1117; }
+      .plat-hdr      { background:#0D1117; }
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem 5rem;
+    }
+
+    .wrap { max-width: 760px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header { margin-bottom: 1.75rem; }
+    header h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: -.02em; }
+    header p   { font-size: .82rem; color: var(--muted); margin-top: .3rem; }
+    .last-upd  { font-size: .75rem; color: var(--muted); margin-bottom: 1.5rem; }
+
+    /* ── Panels ── */
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.1rem 1.25rem;
+      margin-bottom: .875rem;
+    }
+    .panel-hdr {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: .625rem;
+    }
+    .panel-label {
+      font-size: .68rem; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .panel-action {
+      font-size: .72rem; color: var(--accent); cursor: pointer;
+      background: none; border: none; font-family: inherit;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: .375rem; }
+
+    /* ── Chips ── */
+    .chip {
+      padding: .28rem .75rem; border-radius: 999px; font-size: .78rem;
+      font-weight: 500; cursor: pointer; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); transition: all .1s;
+      font-family: inherit;
+    }
+    .chip.on { background: var(--text); color: #fff; border-color: var(--text); }
+
+    /* ── Platform chips ── */
+    .pchip {
+      padding: .28rem .8rem; border-radius: var(--radius); font-size: .78rem;
+      font-weight: 500; cursor: pointer; border: 1px solid transparent;
+      background: transparent; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 5px;
+      transition: all .1s;
+    }
+    .pchip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Type filter ── */
+    .type-row { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .tbtn {
+      padding: .28rem .85rem; border-radius: 999px; font-size: .78rem;
+      font-weight: 500; cursor: pointer; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); font-family: inherit;
+      transition: all .1s;
+    }
+    .tbtn.on { background: var(--text); color: #fff; border-color: var(--text); }
+
+    /* ── Platform sections ── */
+    .psec {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; margin-bottom: .75rem;
+    }
+    .plat-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .6rem 1rem; background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .plat-title { display: flex; align-items: center; gap: .5rem; }
+    .plat-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .plat-name  { font-size: .875rem; font-weight: 600; }
+    .offer-count {
+      font-size: .68rem; padding: .15rem .6rem; border-radius: 999px;
+      background: #F3F4F6; color: var(--muted);
+    }
+
+    /* ── Offer rows ── */
+    .orow {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: .75rem; padding: .875rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .orow:last-child { border-bottom: none; }
+    .orow-left { flex: 1; min-width: 0; }
+    .orow-bank { font-size: .875rem; font-weight: 600; color: var(--text); }
+    .orow-card { font-weight: 400; color: var(--muted); }
+    .orow-desc {
+      font-size: .78rem; color: var(--muted); margin-top: .3rem;
+      line-height: 1.45;
+    }
+    .orow-meta { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .5rem; }
+    .orow-disc {
+      font-family: var(--mono); font-size: .875rem; font-weight: 500;
+      color: var(--success); white-space: nowrap; flex-shrink: 0;
+    }
+
+    /* ── Badges ── */
+    .badge {
+      font-size: .62rem; font-weight: 600; padding: .15rem .45rem;
+      border-radius: 999px; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .badge-emi     { background: #DBEAFE; color: #1E40AF; }
+    .badge-instant { background: #D1FAE5; color: #065F46; }
+
+    /* ── Copy button ── */
+    .copy-btn {
+      font-family: var(--mono); font-size: .72rem; font-weight: 500;
+      padding: .18rem .55rem; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: #F9FAFB; color: var(--text);
+      display: inline-flex; align-items: center; gap: 3px;
+      transition: all .1s;
+    }
+    .copy-btn.done { color: var(--success); border-color: #A7F3D0; background: #ECFDF5; }
+
+    /* ── Meta text ── */
+    .meta-t { font-size: .7rem; color: var(--muted); }
+
+    /* ── Raw toggle ── */
+    .raw-toggle {
+      display: flex; align-items: center; gap: .3rem;
+      width: 100%; padding: .5rem 1rem; font-size: .7rem; color: var(--muted);
+      cursor: pointer; background: none; border: none; border-top: 1px solid var(--border);
+      font-family: inherit; text-align: left;
+    }
+    .raw-pre {
+      margin: 0; padding: .75rem 1rem; font-size: .7rem; font-family: var(--mono);
+      color: var(--muted); background: var(--bg); line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word;
+      max-height: 180px; overflow-y: auto;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Status / disclaimer ── */
+    .status-msg { padding: .875rem 1rem; font-size: .8rem; color: var(--muted); }
+    .err        { color: var(--danger); }
+    .disclaimer {
+      font-size: .7rem; color: var(--muted); text-align: center;
+      margin-top: 2rem; line-height: 1.6;
+    }
+    .disclaimer a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>✈ FlightDeals Scout</h1>
+    <p>Credit card &amp; bank offers on Indian flight booking platforms — updated daily.</p>
+  </header>
+
+  <p class="last-upd" id="last-upd"></p>
+
+  <!-- Bank filter -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-label">Your bank</span>
+      <button class="panel-action" id="bank-clear" onclick="clearBanks()" style="display:none">Clear all</button>
+    </div>
+    <div class="chips" id="bank-chips"></div>
+    <p id="bank-hint" style="font-size:.72rem;color:var(--muted);margin-top:.5rem;font-style:italic">
+      No bank selected — all banks shown
+    </p>
+  </div>
+
+  <!-- Platform filter -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-label">Platforms</span>
+      <button class="panel-action" onclick="toggleAllPlats()" id="plat-toggle">Clear all</button>
+    </div>
+    <div class="chips" id="plat-chips"></div>
+  </div>
+
+  <!-- Offer type filter (shown once data loads) -->
+  <div class="panel" id="type-panel" style="display:none">
+    <div class="panel-hdr"><span class="panel-label">Offer type</span></div>
+    <div class="type-row" id="type-btns"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <div class="status-msg">Loading offers…</div>
+  </div>
+
+  <div class="disclaimer" id="footer" style="display:none">
+    Data scraped daily via GitHub Actions — verify on each platform before booking.<br/>
+    <a href="https://github.com" id="gh-link" target="_blank" rel="noopener">View source &amp; run history on GitHub</a>
+  </div>
+
+</div>
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const BANKS = [
+  "HDFC","SBI","Axis","ICICI","Kotak",
+  "Amex","IndusInd","RBL","IDFC First","AU Bank","Yes Bank"
+];
+const PLATS = [
+  {id:"MakeMyTrip", color:"#E8175D"},
+  {id:"GoIbibo",    color:"#00A99D"},
+  {id:"Yatra",      color:"#E67E22"},
+  {id:"Cleartrip",  color:"#2980B9"},
+  {id:"EaseMyTrip", color:"#27AE60"},
+  {id:"Ixigo",      color:"#E74C3C"},
+];
+const TYPE_OPTS = [
+  {val:"all",     label:"All offers"},
+  {val:"non-emi", label:"Instant / cashback"},
+  {val:"emi",     label:"EMI only"},
+];
+
+// ── State ──────────────────────────────────────────────────────────────────
+let selBanks = new Set();
+let selPlats = new Set(PLATS.map(p => p.id));
+let emiFilter = "all";
+let allData = null;   // the parsed offers.json
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function timeAgo(iso) {
+  const sec = (Date.now() - new Date(iso)) / 1000;
+  if (sec < 60)    return "just now";
+  if (sec < 3600)  return Math.floor(sec/60) + " min ago";
+  if (sec < 86400) return Math.floor(sec/3600) + "h ago";
+  return Math.floor(sec/86400) + "d ago";
+}
+
+function esc(s) {
+  return String(s||"")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Bank chips ─────────────────────────────────────────────────────────────
+function renderBanks() {
+  document.getElementById("bank-chips").innerHTML = BANKS.map(b => {
+    const on = selBanks.has(b);
+    return `<button class="chip${on?" on":""}" onclick="toggleBank('${b}')">${b}</button>`;
+  }).join("");
+  document.getElementById("bank-hint").style.display  = selBanks.size ? "none"   : "";
+  document.getElementById("bank-clear").style.display = selBanks.size ? "inline" : "none";
+}
+function toggleBank(b) { selBanks.has(b) ? selBanks.delete(b) : selBanks.add(b); renderBanks(); renderResults(); }
+function clearBanks()  { selBanks.clear(); renderBanks(); renderResults(); }
+
+// ── Platform chips ─────────────────────────────────────────────────────────
+function renderPlats() {
+  document.getElementById("plat-chips").innerHTML = PLATS.map(p => {
+    const on = selPlats.has(p.id);
+    const dotBg = on ? "#fff" : p.color;
+    const style = on
+      ? `background:${p.color};border-color:${p.color};color:#fff`
+      : `border-color:${p.color}80;color:${p.color}`;
+    return `<button class="pchip" style="${style}" onclick="togglePlat('${p.id}')">
+      <span class="pchip-dot" style="background:${dotBg}"></span>${p.id}
+    </button>`;
+  }).join("");
+  document.getElementById("plat-toggle").textContent =
+    selPlats.size === PLATS.length ? "Clear all" : "Select all";
+}
+function togglePlat(id)   { selPlats.has(id) ? selPlats.delete(id) : selPlats.add(id); renderPlats(); renderResults(); }
+function toggleAllPlats() {
+  selPlats.size === PLATS.length ? selPlats.clear() : PLATS.forEach(p => selPlats.add(p.id));
+  renderPlats(); renderResults();
+}
+
+// ── Type filter ────────────────────────────────────────────────────────────
+function renderTypeFilter() {
+  document.getElementById("type-btns").innerHTML = TYPE_OPTS.map(o =>
+    `<button class="tbtn${emiFilter===o.val?" on":""}" onclick="setType('${o.val}')">${o.label}</button>`
+  ).join("");
+}
+function setType(t) { emiFilter = t; renderTypeFilter(); renderResults(); }
+
+// ── Results ────────────────────────────────────────────────────────────────
+function applyFilters(offers) {
+  if (selBanks.size > 0) {
+    offers = offers.filter(o =>
+      [...selBanks].some(b => (o.bank||"").toLowerCase().includes(b.toLowerCase()))
+    );
+  }
+  if (emiFilter !== "all") {
+    offers = offers.filter(o =>
+      emiFilter === "emi" ? o.offer_type === "EMI" : o.offer_type !== "EMI"
+    );
+  }
+  return offers;
+}
+
+function offerRowHTML(o, last) {
+  const badge = o.offer_type === "EMI"
+    ? `<span class="badge badge-emi">EMI</span>`
+    : `<span class="badge badge-instant">Instant</span>`;
+  const code  = o.promo_code
+    ? `<button class="copy-btn" onclick="copyCode(this,'${esc(o.promo_code)}')">⎘ ${esc(o.promo_code)}</button>`
+    : "";
+  const minB  = o.min_booking  ? `<span class="meta-t">Min: ${esc(o.min_booking)}</span>`  : "";
+  const valid = o.valid_until  ? `<span class="meta-t">Till: ${esc(o.valid_until)}</span>` : "";
+  const cardName = o.card && o.card !== "All cards"
+    ? ` <span class="orow-card">· ${esc(o.card)}</span>` : "";
+  return `
+    <div class="orow" style="${last?"border-bottom:none":""}">
+      <div class="orow-left">
+        <div class="orow-bank">${esc(o.bank)}${cardName}</div>
+        <div class="orow-desc">${esc(o.offer)}</div>
+        <div class="orow-meta">${badge}${code}${minB}${valid}</div>
+      </div>
+      <div class="orow-disc">${esc(o.max_discount||"")}</div>
+    </div>`;
+}
+
+function platSectionHTML(plat, offers) {
+  const filtered = applyFilters([...offers]);
+  const total    = offers.length;
+  const shown    = filtered.length;
+  const countTxt = emiFilter === "all"
+    ? `${total} offer${total!==1?"s":""}`
+    : `${shown} / ${total}`;
+
+  let body;
+  if (filtered.length > 0) {
+    body = filtered.map((o, i) => offerRowHTML(o, i === filtered.length-1)).join("");
+  } else if (total > 0) {
+    body = `<div class="status-msg">No ${emiFilter==="emi"?"EMI":"non-EMI"} offers — try switching the filter.</div>`;
+  } else {
+    body = `<div class="status-msg">No offers found for this platform yet.</div>`;
+  }
+
+  return `
+    <div class="psec">
+      <div class="plat-hdr">
+        <div class="plat-title">
+          <span class="plat-dot" style="background:${plat.color}"></span>
+          <span class="plat-name">${plat.id}</span>
+        </div>
+        <span class="offer-count">${countTxt}</span>
+      </div>
+      ${body}
+    </div>`;
+}
+
+function renderResults() {
+  if (!allData) return;
+  const active = PLATS.filter(p => selPlats.has(p.id));
+  if (!active.length) {
+    document.getElementById("results").innerHTML =
+      `<div class="status-msg">Select at least one platform above.</div>`;
+    return;
+  }
+  document.getElementById("results").innerHTML =
+    active.map(p => platSectionHTML(p, allData.platforms[p.id] || [])).join("");
+}
+
+// ── Copy promo code ────────────────────────────────────────────────────────
+function copyCode(btn, code) {
+  navigator.clipboard.writeText(code).catch(()=>{});
+  btn.classList.add("done");
+  btn.textContent = "✓ Copied";
+  setTimeout(() => { btn.classList.remove("done"); btn.textContent = "⎘ " + code; }, 2000);
+}
+
+// ── Load data ──────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await fetch("offers.json?v=" + Date.now());
+    if (!r.ok) throw new Error(`HTTP ${r.status} — does offers.json exist in the repo root?`);
+    allData = await r.json();
+
+    document.getElementById("last-upd").textContent =
+      `Last updated: ${timeAgo(allData.updated_at)} — ${new Date(allData.updated_at).toLocaleString("en-IN")}`;
+
+    document.getElementById("type-panel").style.display = "";
+    document.getElementById("footer").style.display     = "";
+    renderTypeFilter();
+    renderResults();
+
+  } catch(e) {
+    document.getElementById("results").innerHTML =
+      `<div class="status-msg err">
+        ⚠ Could not load offers.json: ${esc(e.message)}<br/>
+        <br/>If running locally, serve with a web server:<br/>
+        <code>python -m http.server 8000</code>
+      </div>`;
+  }
+}
+
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+renderBanks();
+renderPlats();
+init();
+</script>
+</body>
+</html>
